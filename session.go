@@ -112,14 +112,8 @@ func newSession(conn connection, v protocol.VersionNumber, connectionID protocol
 	s.setup()
 	cryptoStream, _ := s.GetOrOpenStream(1)
 	_, _ = s.AcceptStream() // don't expose the crypto stream
-	var sourceAddr []byte
-	if udpAddr, ok := conn.RemoteAddr().(*net.UDPAddr); ok {
-		sourceAddr = udpAddr.IP
-	} else {
-		sourceAddr = []byte(conn.RemoteAddr().String())
-	}
 	var err error
-	s.cryptoSetup, err = handshake.NewCryptoSetup(connectionID, sourceAddr, v, sCfg, cryptoStream, s.connectionParameters, s.aeadChanged)
+	s.cryptoSetup, err = handshake.NewCryptoSetup(connectionID, conn.RemoteAddr(), v, sCfg, cryptoStream, s.connectionParameters, s.aeadChanged)
 	if err != nil {
 		return nil, err
 	}
