@@ -42,7 +42,7 @@ func init() {
 	})
 }
 
-var _ = Describe("Chrome tests", func() {
+var _ = PDescribe("Chrome tests", func() {
 	It("does not work with mismatching versions", func() {
 		versionForUs := protocol.SupportedVersions[0]
 		versionForChrome := protocol.SupportedVersions[1]

@@ -6,12 +6,13 @@ import (
 	"encoding/binary"
 	"errors"
 	"io"
-	"sync"
+	"time"
 
 	"github.com/lucas-clemente/quic-go/crypto"
 	"github.com/lucas-clemente/quic-go/protocol"
 	"github.com/lucas-clemente/quic-go/qerr"
 	"github.com/lucas-clemente/quic-go/utils"
+	deadlock "github.com/sasha-s/go-deadlock"
 )
 
 // KeyDerivationFunction is used for key derivation
@@ -43,7 +44,7 @@ type cryptoSetupServer struct {
 
 	connectionParameters ConnectionParametersManager
 
-	mutex sync.RWMutex
+	mutex deadlock.RWMutex
 }
 
 var _ CryptoSetup = &cryptoSetupServer{}
@@ -63,6 +64,7 @@ func NewCryptoSetup(
 	connectionParametersManager ConnectionParametersManager,
 	aeadChanged chan protocol.EncryptionLevel,
 ) (CryptoSetup, error) {
+	deadlock.Opts.DeadlockTimeout = 3 * time.Second
 	return &cryptoSetupServer{
 		connID:               connID,
 		sourceAddr:           sourceAddr,
@@ -145,7 +147,10 @@ func (h *cryptoSetupServer) handleMessage(chloData []byte, cryptoData map[Tag][]
 		if err != nil {
 			return false, err
 		}
+		h.mutex.Lock()
 		_, err = h.cryptoStream.Write(reply)
+		utils.Debugf("sent SHLO")
+		h.mutex.Unlock()
 		if err != nil {
 			return false, err
 		}
@@ -157,7 +162,9 @@ func (h *cryptoSetupServer) handleMessage(chloData []byte, cryptoData map[Tag][]
 	if err != nil {
 		return false, err
 	}
+	// h.mutex.Lock()
 	_, err = h.cryptoStream.Write(reply)
+	// h.mutex.Unlock()
 	return false, err
 }
 
@@ -194,8 +201,8 @@ func (h *cryptoSetupServer) Open(dst, src []byte, packetNumber protocol.PacketNu
 }
 
 func (h *cryptoSetupServer) GetSealer() (protocol.EncryptionLevel, Sealer) {
-	h.mutex.RLock()
-	defer h.mutex.RUnlock()
+	h.mutex.Lock()
+	utils.Debugf("GetSealer")
 
 	if h.forwardSecureAEAD != nil && h.sentSHLO {
 		return protocol.EncryptionForwardSecure, h.sealForwardSecure
@@ -208,8 +215,8 @@ func (h *cryptoSetupServer) GetSealer() (protocol.EncryptionLevel, Sealer) {
 }
 
 func (h *cryptoSetupServer) GetSealerWithEncryptionLevel(encLevel protocol.EncryptionLevel) (Sealer, error) {
-	h.mutex.RLock()
-	defer h.mutex.RUnlock()
+	h.mutex.Lock()
+	utils.Debugf("GetSealerWithEncryptionLevel", encLevel)
 
 	switch encLevel {
 	case protocol.EncryptionUnencrypted:
@@ -239,6 +246,11 @@ func (h *cryptoSetupServer) sealSecure(dst, src []byte, packetNumber protocol.Pa
 
 func (h *cryptoSetupServer) sealForwardSecure(dst, src []byte, packetNumber protocol.PacketNumber, associatedData []byte) []byte {
 	return h.forwardSecureAEAD.Seal(dst, src, packetNumber, associatedData)
+}
+
+func (h *cryptoSetupServer) PutBackSealer() {
+	utils.Debugf("PutBackSealer")
+	h.mutex.Unlock()
 }
 
 func (h *cryptoSetupServer) isInchoateCHLO(cryptoData map[Tag][]byte, cert []byte) bool {

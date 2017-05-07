@@ -17,7 +17,7 @@ import (
 	. "github.com/onsi/gomega/gexec"
 )
 
-var _ = Describe("Integration tests", func() {
+var _ = FDescribe("Integration tests", func() {
 	BeforeEach(func() {
 		dataMan.GenerateData(dataLen)
 	})

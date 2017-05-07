@@ -61,14 +61,14 @@ func TestIntegration(t *testing.T) {
 var _ = BeforeSuite(func() {
 	setupHTTPHandlers()
 	setupQuicServer()
-	setupSelenium()
+	// setupSelenium()
 })
 
 var _ = AfterSuite(func() {
 	err := server.Close()
 	Expect(err).NotTo(HaveOccurred())
 
-	stopSelenium()
+	// stopSelenium()
 }, 10)
 
 // read the logfile command line flag
@@ -108,7 +108,7 @@ var _ = AfterEach(func() {
 	os.RemoveAll(uploadDir)
 
 	// remove downloaded file in docker container
-	removeDownload("data")
+	// removeDownload("data")
 
 	if len(logFileName) > 0 {
 		_ = logFile.Close()

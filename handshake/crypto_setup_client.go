@@ -86,6 +86,10 @@ func NewCryptoSetupClient(
 	}, nil
 }
 
+func (h *cryptoSetupClient) PutBackSealer() {
+
+}
+
 func (h *cryptoSetupClient) HandleCryptoStream() error {
 	for {
 		err := h.maybeUpgradeCrypto()

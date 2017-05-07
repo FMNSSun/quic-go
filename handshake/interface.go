@@ -16,4 +16,5 @@ type CryptoSetup interface {
 
 	GetSealer() (protocol.EncryptionLevel, Sealer)
 	GetSealerWithEncryptionLevel(protocol.EncryptionLevel) (Sealer, error)
+	PutBackSealer()
 }
