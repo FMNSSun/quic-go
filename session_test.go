@@ -741,6 +741,20 @@ var _ = Describe("Session", func() {
 			Expect((*[]byte)(unsafe.Pointer(reflect.ValueOf(clientSess.cryptoSetup).Elem().FieldByName("diversificationNonce").UnsafeAddr()))).To(Equal(&hdr.DiversificationNonce))
 		})
 
+		It("passes the transport parameters to the cryptoSetup, as a client", func() {
+			s, err := newClientSession(
+				nil,
+				"hostname",
+				protocol.Version35,
+				0,
+				func(Session, bool) {},
+				populateClientConfig(&Config{TruncateConnectionID: true}),
+				nil,
+			)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(*(*bool)(unsafe.Pointer(reflect.ValueOf(s.cryptoSetup).Elem().FieldByName("params").Elem().FieldByName("TruncateConnectionID").UnsafeAddr()))).To(BeTrue())
+		})
+
 		Context("updating the remote address", func() {
 			It("sets the remote address", func() {
 				remoteIP := &net.IPAddr{IP: net.IPv4(192, 168, 0, 100)}

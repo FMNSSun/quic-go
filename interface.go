@@ -67,6 +67,9 @@ type Config struct {
 	// If not set, it uses all versions available.
 	// Warning: This API should not be considered stable and will change soon.
 	Versions []protocol.VersionNumber
+	// Ask the server to truncate the connection ID sent in the Public Header.
+	// Only valid for the client.
+	TruncateConnectionID bool
 }
 
 // A Listener for incoming QUIC connections
