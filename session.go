@@ -39,6 +39,11 @@ var (
 // Once the callback has been called with isForwardSecure = true, it is guarantueed to not be called with isForwardSecure = false after that
 type cryptoChangeCallback func(session Session, isForwardSecure bool)
 
+type handshakeEvent struct {
+	encLevel protocol.EncryptionLevel
+	err      error
+}
+
 type closeError struct {
 	err    error
 	remote bool
@@ -88,6 +93,9 @@ type session struct {
 	// will be closed as soon as the handshake completes, and receive any error that might occur until then
 	// it to block WaitUntilHandshakeComplete()
 	handshakeCompleteChan chan error
+	// handshakeChan receives handshake events and is closed as soon the handshake completes
+	// the receiving end of this channel is passed to the creator of the session
+	handshakeChan chan<- handshakeEvent
 
 	nextAckScheduledTime time.Time
 
@@ -131,6 +139,8 @@ func newSession(conn connection, v protocol.VersionNumber, connectionID protocol
 	}
 	aeadChanged := make(chan protocol.EncryptionLevel, 2)
 	s.aeadChanged = aeadChanged
+	handshakeChan := make(chan handshakeEvent, 1)
+	s.handshakeChan = handshakeChan
 	var err error
 	s.cryptoSetup, err = handshake.NewCryptoSetup(connectionID, sourceAddr, v, sCfg, cryptoStream, s.connectionParameters, supportedVersions, aeadChanged)
 	if err != nil {
@@ -143,14 +153,20 @@ func newSession(conn connection, v protocol.VersionNumber, connectionID protocol
 	return s, err
 }
 
-func newClientSession(conn connection, hostname string, v protocol.VersionNumber, connectionID protocol.ConnectionID, tlsConfig *tls.Config, cryptoChangeCallback cryptoChangeCallback, negotiatedVersions []protocol.VersionNumber) (*session, error) {
+func newClientSession(
+	conn connection,
+	hostname string,
+	v protocol.VersionNumber,
+	connectionID protocol.ConnectionID,
+	tlsConfig *tls.Config,
+	negotiatedVersions []protocol.VersionNumber,
+) (*session, <-chan handshakeEvent, error) {
 	s := &session{
 		conn:         conn,
 		connectionID: connectionID,
 		perspective:  protocol.PerspectiveClient,
 		version:      v,
 
-		cryptoChangeCallback: cryptoChangeCallback,
 		connectionParameters: handshake.NewConnectionParamatersManager(protocol.PerspectiveClient, v),
 	}
 
@@ -159,17 +175,19 @@ func newClientSession(conn connection, hostname string, v protocol.VersionNumber
 
 	aeadChanged := make(chan protocol.EncryptionLevel, 2)
 	s.aeadChanged = aeadChanged
+	handshakeChan := make(chan handshakeEvent, 1)
+	s.handshakeChan = handshakeChan
 	cryptoStream, _ := s.OpenStream()
 	var err error
 	s.cryptoSetup, err = handshake.NewCryptoSetupClient(hostname, connectionID, v, cryptoStream, tlsConfig, s.connectionParameters, aeadChanged, negotiatedVersions)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	s.packer = newPacketPacker(connectionID, s.cryptoSetup, s.connectionParameters, s.streamFramer, s.perspective, s.version)
 	s.unpacker = &packetUnpacker{aead: s.cryptoSetup, version: s.version}
 
-	return s, err
+	return s, handshakeChan, err
 }
 
 // setup is called from newSession and newClientSession and initializes values that are independent of the perspective
@@ -248,16 +266,22 @@ runLoop:
 			// begins with the public header and we never copy it.
 			putPacketBuffer(p.publicHeader.Raw)
 		case l, ok := <-aeadChanged:
-			if !ok {
+			if !ok { // the aeadChanged chan was closed. This means that the handshake is completed.
 				s.handshakeComplete = true
 				aeadChanged = nil // prevent this case from ever being selected again
+				close(s.handshakeChan)
 				close(s.handshakeCompleteChan)
 			} else {
 				if l == protocol.EncryptionForwardSecure {
 					s.packer.SetForwardSecure()
 				}
 				s.tryDecryptingQueuedPackets()
-				s.cryptoChangeCallback(s, l == protocol.EncryptionForwardSecure)
+				// TODO: remove this, when removing the cryptoChangeCallback for the server
+				if s.perspective == protocol.PerspectiveServer {
+					s.cryptoChangeCallback(s, l == protocol.EncryptionForwardSecure)
+				} else {
+					s.handshakeChan <- handshakeEvent{encLevel: l}
+				}
 			}
 		}
 
@@ -287,6 +311,8 @@ runLoop:
 	// otherwise this chan will already be closed
 	if !s.handshakeComplete {
 		s.handshakeCompleteChan <- closeErr.err
+		s.handshakeChan <- handshakeEvent{err: closeErr.err}
+
 	}
 	s.handleCloseError(closeErr)
 	close(s.runClosed)

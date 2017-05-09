@@ -162,13 +162,12 @@ var _ = Describe("Session", func() {
 		cpm = &mockConnectionParametersManager{idleTime: 60 * time.Second}
 		sess.connectionParameters = cpm
 
-		clientSess, err = newClientSession(
+		clientSess, _, err = newClientSession(
 			mconn,
 			"hostname",
 			protocol.Version35,
 			0,
 			nil,
-			func(Session, bool) {},
 			nil,
 		)
 		Expect(err).ToNot(HaveOccurred())
